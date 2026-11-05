@@ -1,0 +1,6 @@
+# Build artifacts
+*.oiplugin
+node_modules/
+.openidea-tools/
+*.key
+.openidea

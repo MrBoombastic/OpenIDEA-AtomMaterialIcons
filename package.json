@@ -1,0 +1,14 @@
+{
+  "name": "openidea-atom-material-icons",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "convert": "node tools/convert_atom_material.mjs",
+    "check": "node tools/check_theme.mjs"
+  },
+  "dependencies": {
+    "fflate": "0.8.3",
+    "saxes": "6.0.0"
+  }
+}
