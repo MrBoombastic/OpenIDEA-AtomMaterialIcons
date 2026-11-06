@@ -7,6 +7,12 @@ import { SaxesParser } from 'saxes';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
+// Source regexes that are wrong upstream. IntelliJ hides these bugs with file-type icons, which aren't ported.
+export const PATTERN_FIXES = {
+  // `(-kit)` is missing `?`, so plain `.svelte` files never match.
+  [String.raw`.*\.svelte(-kit)(\.[cm]?[jt]s)?`]: String.raw`.*\.svelte(-kit)?(\.[cm]?[jt]s)?$`,
+};
+
 export function literalExtensions(pattern) {
   const match = /^\.\*\\\.(?:\(([A-Za-z0-9|]+)\)|([A-Za-z0-9]+))\$?$/.exec(pattern);
   return match ? (match[1] || match[2]).split('|') : [];
@@ -85,7 +91,7 @@ function convert(jar) {
         const name = value.trim().toLowerCase();
         if (name && !/[*?/\\]/.test(name)) mapping[name] = iconId;
       }
-      const pattern = rule.pattern || '';
+      const pattern = PATTERN_FIXES[rule.pattern] ?? (rule.pattern || '');
       const literal = kind === 'files' ? literalExtensions(pattern) : [];
       if (literal.length) {
         for (const extension of literal) extensions[extension.toLowerCase()] = iconId;

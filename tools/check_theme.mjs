@@ -50,6 +50,7 @@ for (const [name, expected] of Object.entries({
   'main.rs': 'rust', 'main.py': 'python', 'main.go': 'go', 'Main.java': 'java',
   'README.md': 'readme', 'package.json': 'npm', 'Dockerfile': 'docker',
   '.gitignore': 'gitignore', 'unknown.zzznotanextension': 'file',
+  '+page.svelte': 'svelte', 'counter.svelte.ts': 'svelte', 'svelte.config.js': 'svelte_config',
 })) assert.equal(resolve(name), expected, name);
 assert.equal(theme.folderNames['.github'], 'folder__github');
 assert.equal(theme.folderNames['node_modules'], 'folder__node');

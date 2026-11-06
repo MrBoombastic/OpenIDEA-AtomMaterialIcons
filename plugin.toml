@@ -1,10 +1,10 @@
 id = "mrboombastic.atom-material-icons"
 name = "Atom Material Icons"
-version = "1.0.0"
+version = "1.0.1"
 description = "Atom Material Icons for OpenIDEA, ported from Mallowigi's IntelliJ plugin. Includes file and folder icons with light and dark variants."
 authors = ["MrBoombastic", "Elior Boukhobza (Mallowigi)"]
 license = "MIT"
-change-notes = "1.0.0 — Initial release, based on Atom Material Icons 210.0.2. Includes dark variants, folder patterns, open-folder icons and visibility settings."
+change-notes = "1.0.1 - Fix: .svelte files now get the Svelte icon (the upstream pattern never matched them). 1.0.0 - Initial release, based on Atom Material Icons 210.0.2. Includes dark variants, folder patterns, open-folder icons and visibility settings."
 engines.openidea = "^1.1"
 categories = ["icon-themes"]
 

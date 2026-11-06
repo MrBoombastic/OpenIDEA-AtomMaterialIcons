@@ -9307,7 +9307,7 @@
       "ignoreCase": true
     },
     {
-      "pattern": ".*\\.svelte(-kit)(\\.[cm]?[jt]s)?",
+      "pattern": ".*\\.svelte(-kit)?(\\.[cm]?[jt]s)?$",
       "icon": "svelte",
       "ignoreCase": true
     },
