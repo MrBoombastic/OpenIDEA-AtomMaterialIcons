@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { literalExtensions, associationRules } from './convert_atom_material.mjs';
+import { literalExtensions, associationRules, cleanSvg } from './convert_atom_material.mjs';
 
 assert.deepEqual(literalExtensions(String.raw`.*\.(ts|tsx)$`), ['ts', 'tsx']);
 assert.deepEqual(literalExtensions(String.raw`.*\.rs$`), ['rs']);
@@ -10,6 +10,10 @@ assert.deepEqual(associationRules('<associations><!-- <regex icon="fake"/> --><r
   { icon: 'a&b', priority: '1', pattern: 'x"y' }, { icon: 'high', priority: '2' },
 ]);
 assert.throws(() => associationRules('<associations>'));
+assert.equal(cleanSvg('<svg xmlns="http://www.w3.org/2000/svg" width="16" fill="#4DB6AC" viewBox="0 0 24 24"><path d="M0 0"/></svg>'),
+  '<svg xmlns="http://www.w3.org/2000/svg" width="16" viewBox="0 0 24 24"><g fill="#4DB6AC"><path d="M0 0"/></g></svg>');
+assert.equal(cleanSvg('<svg viewBox="0 0 1 1"><path d="M0 0"/></svg>'), '<svg viewBox="0 0 1 1"><g fill="#6C707E"><path d="M0 0"/></g></svg>');
+assert.equal(cleanSvg('<svg viewBox="0 0 1 1"><path fill="red" d="M0 0"/></svg>'), '<svg viewBox="0 0 1 1"><path fill="red" d="M0 0"/></svg>');
 assert.deepEqual(associationRules('<regex icon="a\n\tb" pattern="&#10;"/>'), [{ icon: 'a  b', pattern: '\n' }]);
 
 const root = new URL('../', import.meta.url);
@@ -26,6 +30,8 @@ for (const rule of patterns) {
   assert.ok(definitions[rule.icon]);
   if (rule.openIcon) assert.ok(definitions[rule.openIcon]);
 }
+for (const [name, id] of Object.entries(theme.overrides ?? {})) assert.ok(definitions[id], `${name} -> ${id}`);
+assert.equal(theme.overrides['toolwindow-project'], 'ui__icons.expui.toolwindows.project');
 for (const field of ['fileExtensions', 'fileNames', 'folderNames']) {
   for (const [name, id] of Object.entries(theme[field])) {
     assert.ok(!/[\\/]/.test(name), name);
