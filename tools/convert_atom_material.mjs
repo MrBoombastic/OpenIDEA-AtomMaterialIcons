@@ -13,6 +13,18 @@ export const PATTERN_FIXES = {
   [String.raw`.*\.svelte(-kit)(\.[cm]?[jt]s)?`]: String.raw`.*\.svelte(-kit)?(\.[cm]?[jt]s)?$`,
 };
 
+// Source regexes OpenIDEA's pattern checker refuses are matched by the plugin's code instead (path icons, API 1.8).
+// That code uses Rust's regex crate, which has no lookaround: these are equivalent rewrites.
+export const PATH_RULE_FIXES = {
+  // Any `renovate`, `renovaterc` or `renovate[rc].json` name ending, except the plain name `renovate`.
+  [String.raw`(?!^renovate$)(\.|^)renovate(rc)?(\.json)?$`]: String.raw`(.*\.|\.?)renovate(rc|rc\.json|\.json)|.*\.renovate`,
+};
+// Extra file name globs for path rules whose extension can't be read off the pattern.
+const PATH_RULE_GLOBS = {
+  [String.raw`(.*\.|\.?)renovate(rc|rc\.json|\.json)|.*\.renovate`]: ['*renovaterc', '*.renovate'],
+  [String.raw`^cordova([^.]*\.|-(\d\.)+)[cm]?[jt]s$`]: ['cordova*'],
+};
+
 // IntelliJ resource folders Atom Material replaces icons from, in lookup order (see its icon_patchers.xml).
 const UI_SOURCES = ['icons/expui/', 'glyphs/expui/', 'files/expui/', 'icons/', 'glyphs/', 'files/'];
 
@@ -112,6 +124,123 @@ export function associationRules(xml) {
   return rules.sort((a, b) => Number(a.priority || 0) - Number(b.priority || 0));
 }
 
+// Expands a small regex (literals, `[ab]`, `(a|b)`, `?`, escapes) into every string it matches; null if it can't.
+export function expandRegex(source) {
+  let i = 0;
+  const alternatives = () => {
+    const out = [];
+    for (;;) {
+      let seq = [''];
+      while (i < source.length && source[i] !== '|' && source[i] !== ')') {
+        let atom;
+        const c = source[i++];
+        if (c === '(') {
+          if (source.startsWith('?:', i)) i += 2;
+          atom = alternatives();
+          if (!atom || source[i++] !== ')') return null;
+        } else if (c === '[') {
+          const end = source.indexOf(']', i);
+          if (end < 0) return null;
+          atom = [...source.slice(i, end)];
+          if (atom.some(ch => !/[A-Za-z0-9]/.test(ch))) return null;
+          i = end + 1;
+        } else if (c === '\\') {
+          const next = source[i++];
+          if (!/[.\-]/.test(next)) return null;
+          atom = [next];
+        } else if (/[A-Za-z0-9_-]/.test(c)) atom = [c];
+        else return null;
+        if (source[i] === '?') {
+          i++;
+          atom = ['', ...atom];
+        }
+        seq = seq.flatMap(prefix => atom.map(part => prefix + part));
+        if (seq.length > 256) return null;
+      }
+      out.push(...seq);
+      if (source[i] !== '|') return out;
+      i++;
+    }
+  };
+  const result = alternatives();
+  return result && i === source.length ? [...new Set(result)] : null;
+}
+
+// File extensions a rule can end with: the part after its last `\.`, expanded.
+export function patternExtensions(pattern) {
+  const body = pattern.replace(/\$$/, '');
+  // The last `\.` outside any group.
+  let dot = -1;
+  for (let i = 0, depth = 0; i < body.length; i++) {
+    if (body[i] === '\\') {
+      if (body[i + 1] === '.' && depth === 0) dot = i;
+      i++;
+    } else if (body[i] === '(') depth++;
+    else if (body[i] === ')') depth--;
+  }
+  if (dot < 0) return null;
+  const tail = body.slice(dot + 2);
+  // An optional extension group (`\.(a|b)?`) can also end in a bare dot; ignore that case.
+  const expanded = expandRegex(tail.endsWith(')?') ? tail.slice(0, -1) : tail);
+  return expanded && expanded.every(Boolean) ? expanded.map(e => e.toLowerCase()) : null;
+}
+
+// File rules for the plugin's code (rules/path-icons.json): the source regexes OpenIDEA refuses, plus every other
+// rule that could outrank them. Atom Material picks the highest-priority match (the first one on a tie), with
+// regexes that contain `/` matched against the whole path and the rest against the name.
+export function pathIconRules(rules, sourceIds, unsupported) {
+  const all = [];
+  for (const [order, rule] of rules.entries()) {
+    const iconId = sourceIds.get(`files/${basename(rule.icon, '.svg')}`);
+    if (!iconId || !rule.pattern) continue;
+    const original = PATTERN_FIXES[rule.pattern] ?? rule.pattern;
+    const dynamic = Object.hasOwn(unsupported, original);
+    const pattern = dynamic ? (PATH_RULE_FIXES[original] ?? original) : original;
+    all.push({ order, priority: Number(rule.priority || 0), original, pattern, icon: dynamic ? iconId : '' });
+  }
+  const dynamic = all.filter(rule => rule.icon);
+  assert.equal(new Set(dynamic.map(rule => rule.original)).size, Object.keys(unsupported).length,
+    'every unsupported pattern needs a source rule');
+  const lowest = Math.min(...dynamic.map(rule => rule.priority));
+  // Rules are listed best first, so the plugin can stop at the first match.
+  const listed = all.filter(rule => rule.priority >= lowest)
+    .sort((a, b) => b.priority - a.priority || a.order - b.order);
+  const extensions = new Set();
+  const names = new Set();
+  for (const rule of dynamic) {
+    const extra = PATH_RULE_GLOBS[rule.pattern];
+    if (extra) extra.forEach(glob => names.add(glob));
+    else {
+      const found = patternExtensions(rule.pattern);
+      assert.ok(found, `no file extensions in ${rule.pattern}`);
+      found.forEach(extension => extensions.add(extension));
+    }
+  }
+  const globs = [`**/*.{${[...extensions].sort().join(',')}}`, ...[...names].sort().map(name => `**/${name}`)];
+  return {
+    globs,
+    rules: listed.map(rule => [rule.priority, rule.pattern, rule.icon]),
+    icons: [...new Set(dynamic.map(rule => rule.icon))].sort(),
+  };
+}
+
+// Rewrites the generated `[[contributes.fileIcons]]` block of plugin.toml: one entry per path-rule icon.
+function writeFileIcons(icons, definitions) {
+  const manifestPath = resolve(root, 'plugin.toml');
+  const begin = '# BEGIN generated by tools/convert_atom_material.mjs: icons for path rules\n';
+  const end = '# END generated\n';
+  const entries = icons.map(id => {
+    const definition = definitions[id];
+    const { light, dark } = typeof definition === 'string' ? { light: definition } : definition;
+    return `[[contributes.fileIcons]]\nid = "${id}"\nicon = "${light}"\n${dark ? `iconDark = "${dark}"\n` : ''}`;
+  });
+  const manifest = readFileSync(manifestPath, 'utf8').replace(/\r\n/g, '\n');
+  const start = manifest.indexOf(begin);
+  const stop = manifest.indexOf(end);
+  assert.ok(start >= 0 && stop > start, 'plugin.toml must contain the generated fileIcons markers');
+  writeFileSync(manifestPath, manifest.slice(0, start) + begin + entries.join('\n') + '\n' + end + manifest.slice(stop + end.length));
+}
+
 function convert(jar) {
   const definitions = Object.create(null);
   const sourceIds = new Map();
@@ -151,11 +280,13 @@ function convert(jar) {
   const names = Object.create(null);
   const folders = Object.create(null);
   const patterns = [];
+  let pathIcons;
   for (const [xmlName, kind, mapping, attr] of [
     ['icon_associations.xml', 'files', names, 'fileNames'],
     ['folder_associations.xml', 'folders', folders, 'folderNames'],
   ]) {
     const rules = associationRules(Buffer.from(archive[`iconGenerator/${xmlName}`]).toString('utf8'));
+    if (kind === 'files') pathIcons = pathIconRules(rules, sourceIds, unsupported);
     const convertedPatterns = [];
     for (const rule of rules) {
       const stem = basename(rule.icon, '.svg');
@@ -208,11 +339,18 @@ function convert(jar) {
     if (rule.openIcon) assert.ok(definitions[rule.openIcon]);
   }
   writeFileSync(resolve(root, 'icons/theme.json'), JSON.stringify(theme, null, 2) + '\n');
+  for (const iconId of pathIcons.icons) assert.ok(definitions[iconId], iconId);
+  mkdirSync(resolve(root, 'rules'), { recursive: true });
+  // One rule per line: [priority, regex, icon id ('' for rules the icon theme already handles)].
+  writeFileSync(resolve(root, 'rules/path-icons.json'), `{"globs": ${JSON.stringify(pathIcons.globs)},\n"rules": [\n${
+    pathIcons.rules.map(rule => JSON.stringify(rule)).join(',\n')}\n]}\n`);
+  writeFileIcons(pathIcons.icons, definitions);
   console.log(JSON.stringify(Object.fromEntries(Object.entries(theme)
     .filter(([, value]) => typeof value === 'object')
     .map(([key, value]) => [key, Object.keys(value).length])), null, 2));
   console.log('Oversized SVGs skipped:', skipped.join(', '));
-  console.log('Unsupported source patterns:', Object.keys(unsupported).length);
+  console.log('Unsupported source patterns (matched by the plugin by path):', Object.keys(unsupported).length);
+  console.log('Path rules:', pathIcons.rules.length, 'with', pathIcons.icons.length, 'icons; globs:', pathIcons.globs.join(' '));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

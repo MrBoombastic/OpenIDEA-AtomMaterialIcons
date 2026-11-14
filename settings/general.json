@@ -1,0 +1,10 @@
+{
+  "properties": {
+    "pathIcons": {
+      "type": "boolean",
+      "title": "Icons by folder",
+      "description": "Gives files icons that depend on the folder they are in, as Atom Material does (tests, mocks, Redux, i18n, config folders, …). OpenIDEA shows these icons with any icon theme, so turn this off when you use another one.",
+      "default": true
+    }
+  }
+}
