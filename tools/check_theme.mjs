@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { literalExtensions, associationRules, cleanSvg } from './convert_atom_material.mjs';
+import { svgColors, isNearWhite, contrast, MIN_CONTRAST } from './light_variants.mjs';
 
 assert.deepEqual(literalExtensions(String.raw`.*\.(ts|tsx)$`), ['ts', 'tsx']);
 assert.deepEqual(literalExtensions(String.raw`.*\.rs$`), ['rs']);
@@ -23,6 +24,17 @@ for (const [id, definition] of Object.entries(definitions)) {
   assert.match(id, /^[a-z0-9][a-z0-9._-]{0,63}$/);
   for (const path of typeof definition === 'string' ? [definition] : Object.values(definition)) {
     assert.ok(existsSync(new URL(path, root)), path);
+  }
+}
+// Light variants must stay readable on light surfaces: every exposed (non-near-white) colour
+// meets the graphical-object contrast minimum on white.
+for (const [id, definition] of Object.entries(definitions)) {
+  const light = typeof definition === 'string' ? definition : definition.light;
+  const svg = readFileSync(new URL(light, root), 'utf8');
+  for (const color of svgColors(svg)) {
+    if (color.length === 8 || isNearWhite(color)) continue;
+    const ratio = contrast(color, '#ffffff');
+    assert.ok(ratio >= MIN_CONTRAST, `${id} light ${color} contrast ${ratio.toFixed(2)} < ${MIN_CONTRAST}`);
   }
 }
 const patterns = theme.patterns.map(rule => ({ ...rule, regex: new RegExp(rule.pattern, rule.ignoreCase ? 'i' : '') }));

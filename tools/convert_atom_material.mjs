@@ -4,6 +4,7 @@ import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { unzipSync } from 'fflate';
 import { SaxesParser } from 'saxes';
+import { applyLightVariants } from './light_variants.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 
@@ -345,6 +346,8 @@ function convert(jar) {
   writeFileSync(resolve(root, 'rules/path-icons.json'), `{"globs": ${JSON.stringify(pathIcons.globs)},\n"rules": [\n${
     pathIcons.rules.map(rule => JSON.stringify(rule)).join(',\n')}\n]}\n`);
   writeFileIcons(pathIcons.icons, definitions);
+  // Add hue-preserving light variants for icons whose bright fills wash out on light themes.
+  console.log('Light variants added:', applyLightVariants(root));
   console.log(JSON.stringify(Object.fromEntries(Object.entries(theme)
     .filter(([, value]) => typeof value === 'object')
     .map(([key, value]) => [key, Object.keys(value).length])), null, 2));
