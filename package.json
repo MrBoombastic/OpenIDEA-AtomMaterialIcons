@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "convert": "node tools/convert_atom_material.mjs",
+    "light": "node tools/light_variants.mjs",
     "check": "node tools/check_theme.mjs"
   },
   "dependencies": {
